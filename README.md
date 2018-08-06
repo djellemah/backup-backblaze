@@ -1,8 +1,6 @@
 # Backup::Backblaze
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/backup/backblaze`. To experiment with that code, run `bin/console` for an interactive prompt.
-
-TODO: Delete this and the text above, and describe your gem
+Plugin for the [Backup](https://github.com/backup/backup) gem to use [Backblaze](https://www.backblaze.com/) as storage.
 
 ## Installation
 
@@ -22,7 +20,26 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+  Add a storage block something like this to your usual Backup DSL file:
+
+    # BackBlaze must be a string here, not a class name. Because it's defined external to Backup gem.
+    store_with 'BackBlaze' do |server|
+      # from backblaze ui
+      server.account_id = 'deadbeefdead'
+      server.app_key    = 'c27111357f682232c9943f6e63e98f916722c975e4'
+
+      # bucket name must be globally unique (yes, really).
+      # create buckets on the backblaze website. app_key must have access.
+      server.bucket     = 'your_globally_unique_bucket_name'
+
+      # path defaults to '/'
+      server.path       = '/whatever/you_like'
+      server.keep       = 3
+
+      # minimum is 5mb, default is 100mb. Leave at default unless you have a good reason.
+      # server.part_size = 5000000
+    end
+
 
 ## Development
 
@@ -32,7 +49,7 @@ To install this gem onto your local machine, run `bundle exec rake install`. To 
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/backup-backblaze.
+Bug reports and pull requests are welcome on GitHub at https://github.com/djellemah/backup-backblaze.
 
 ## License
 
