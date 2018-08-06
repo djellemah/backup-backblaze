@@ -1,7 +1,7 @@
 require "backup/backblaze/version"
+require "backup/backblaze/back_blaze"
 
 module Backup
   module Backblaze
-    # Your code goes here...
   end
 end
