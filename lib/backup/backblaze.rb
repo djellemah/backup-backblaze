@@ -1,6 +1,3 @@
-require 'bundler'
-Bundler.setup
-
 require 'backup'
 
 module Backup
