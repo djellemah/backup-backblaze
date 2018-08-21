@@ -24,7 +24,7 @@ module Backup
         encoded = Base64.strict_encode64 "#{account_id}:#{app_key}"
         rsp = Excon.get \
           'https://api.backblazeb2.com/b2api/v1/b2_authorize_account',
-          headers: {'Authorization' => "Basic #{encoded}", 'X-Bz-Test-Mode' => 'fail_some_uploads'},
+          headers: {'Authorization' => "Basic #{encoded}"},
           expects: 200
 
         # this has to stick around because it has various important data
@@ -36,7 +36,7 @@ module Backup
       end
 
       def auth_headers
-        {headers: {'Authorization' => authorization_token, 'X-Bz-Test-Mode' => 'fail_some_uploads'}}
+        {headers: {'Authorization' => authorization_token}}
       end
 
 
