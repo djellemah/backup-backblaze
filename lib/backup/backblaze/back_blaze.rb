@@ -88,7 +88,7 @@ module Backup
 
           hw = upload.call
 
-          Logger.info "stored at #{hw.fileName}"
+          Logger.info "'#{dst}' stored at #{hw.fileName}"
         end
       end
 
