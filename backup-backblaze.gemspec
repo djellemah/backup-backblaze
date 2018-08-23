@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.email         = ['panic@semiosix.com']
 
   spec.summary       = %q{Backup plugin for BackBlaze}
-  spec.description   = %q{BackBlaze provides cloud storage. This makes it available to }
+  spec.description   = %q{BackBlaze provides cloud storage. This makes it available to the Backup gem.}
   spec.homepage      = 'http://github.com/djellemah/backup-backblaze'
   spec.license       = 'MIT'
 
