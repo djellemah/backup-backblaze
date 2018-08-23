@@ -1,5 +1,6 @@
 require 'digest'
 require_relative 'hash_wrap'
+require_relative 'retry'
 
 module Backup
   module Backblaze
@@ -123,10 +124,6 @@ module Backup
 
         # return for the sha collection
         sha
-      rescue Excon::Errors::Error => ex
-        # The most convenient place to log this
-        Backup::Logger.info ex.message
-        raise
       end
 
       def b2_finish_large_file shas
@@ -141,70 +138,37 @@ module Backup
 
       # 10000 is backblaze specified max number of parts
       MAX_PARTS = 10000
-      MAX_RETRIES = 3
+
+      include Retry
 
       def call
         if src.size > part_size * MAX_PARTS
           raise Error, "File #{src.to_s} has size #{src.size} which is larger than part_size * MAX_PARTS #{part_size * MAX_PARTS}. Try increasing part_size in model."
         end
 
-        # TODO could have multiple threads here, each would need a separate url and token.
-        upload_url, file_auth_token = b2_get_upload_part_url
-
-        # This is quite complicated :-\
+        # TODO could have multiple threads here, each would need a separate token_provider
+        token_provider = TokenProvider.new &method(:b2_get_upload_part_url)
         shas = (0...MAX_PARTS).each_with_object [] do |sequence, shas|
-          retries = 0
-
-          begin
-            sha = b2_upload_part sequence, upload_url, file_auth_token do
+          sha = retry_upload 0, token_provider do |token_provider, retries|
+            # return sha
+            b2_upload_part sequence, token_provider.upload_url, token_provider.file_auth_token do
               Backup::Logger.info "#{src} trying part #{sequence + 1} of #{(src.size / part_size.to_r).ceil} retry #{retries}"
             end
+          end
 
-            # sha will come back as nil once the file is done.
-            if sha
-              shas << sha
-              Backup::Logger.info "#{src} stored part #{sequence + 1} with #{sha}"
-            else
-              break shas
-            end
-
-          rescue Excon::Errors::SocketError, Excon::Errors::Timeout, Excon::Errors::RequestTimeout, Excon::Errors::TooManyRequests
-            raise unless (retries += 1) < MAX_RETRIES
-            sleep retries ** 2 # exponential backoff
-            upload_url, file_auth_token = b2_get_upload_part_url
-            retry
-
-          # some 401
-          rescue Excon::Errors::Unauthorized => ex
-            hw = HashWrap.from_json ex.response.body
-            case hw.code
-            when 'bad_auth_token', 'expired_auth_token'
-              raise unless (retries += 1) < MAX_RETRIES
-              upload_url, file_auth_token = b2_get_upload_part_url
-              retry
-            else
-              raise
-            end
-
-          # 500, and socket and others where the BackBlaze "code" doesn't matter
-          # https://www.backblaze.com/b2/docs/integration_checklist.html says 500-599
-          rescue Excon::Errors::HTTPStatusError => ex
-            if (500..599) === ex.response.status
-              raise unless (retries += 1) < MAX_RETRIES
-              sleep retries ** 2 # exponential backoff
-              upload_url, file_auth_token = b2_get_upload_part_url
-              retry
-            else
-              raise
-            end
-
-          end # end of retry block
-        end # of each_with_object
+          # sha will come back as nil once the file is done.
+          if sha
+            shas << sha
+            Backup::Logger.info "#{src} stored part #{sequence + 1} with #{sha}"
+          else
+            break shas
+          end
+        end
 
         # finish up, log and return the response
-        hw = b2_finish_large_file shas
+        hash_wrap = b2_finish_large_file shas
         Backup::Logger.info "#{src} finished"
-        hw
+        hash_wrap
       end
     end
   end
