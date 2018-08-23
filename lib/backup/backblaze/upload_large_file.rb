@@ -96,6 +96,7 @@ module Backup
         # return nil if the read comes back as a nil, ie no bytes read
         return if bytes.nil? || bytes.empty?
 
+        # This is a bit weird. But not so weird that it needs fixing.
         log_block.call
 
         headers = {
@@ -108,7 +109,6 @@ module Backup
         }
 
         # Yes, this is a different pattern to the other Excon.post calls ¯\_(ツ)_/¯
-        # Can raise Excon exceptions that must be handled by the caller to retry
         rsp = Excon.post \
           upload_url,
           headers: headers,
@@ -121,7 +121,7 @@ module Backup
         # contentLength The number of bytes stored in the part.
         # contentSha1 The SHA1 of the bytes stored in the part.
 
-        # return this for the sha collection
+        # return for the sha collection
         sha
       rescue Excon::Errors::Error => ex
         # The most convenient place to log this
