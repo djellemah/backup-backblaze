@@ -6,6 +6,7 @@ require 'pathname'
 require_relative 'upload_file.rb'
 require_relative 'upload_large_file.rb'
 require_relative 'account.rb'
+require_relative 'retry.rb'
 
 require 'backup/storage/base'
 
@@ -76,19 +77,21 @@ module Backup
               bucket_id: bucket_id
           else
             Logger.info "Storing '#{dst}'"
-            # TODO could upload several files in parallel with several of these upload_tokens
-            upload_url, upload_token = account.upload_url bucket_id: bucket_id
+
+            # TODO could upload several files in parallel with several of these token_provider
+            token_provider = ::Backup::Backblaze::Retry::TokenProvider.new do
+              account.upload_url bucket_id: bucket_id
+            end
 
             ::Backup::Backblaze::UploadFile.new \
               src: src_pathname.to_s,
               dst: dst,
-              authorization_token: upload_token,
-              url: upload_url
+              token_provider: token_provider
           end
 
-          hw = upload.call
+          hash_wrap = upload.call
 
-          Logger.info "'#{dst}' stored at #{hw.fileName}"
+          Logger.info "'#{dst}' stored at #{hash_wrap.fileName}"
         end
       end
 

@@ -1,5 +1,7 @@
 require 'digest'
 
+require_relative 'retry.rb'
+
 module Backup
   module Backblaze
     # calculates sha1 and uploads file
@@ -7,21 +9,18 @@ module Backup
     #
     # dst can contain / for namespaces
     class UploadFile
-      # NOTE this is the authorization_token from the call to upload_url get the url, NOT the one from the account
-      def initialize src:, dst:, authorization_token:, content_type: nil, url:
+      def initialize src:, dst:, token_provider:, content_type: nil
         @src = src
         @dst = dst
-        @authorization_token = authorization_token
         @content_type = content_type
-        @url = url
+        @token_provider = token_provider
       end
 
-      attr_reader :src, :dst, :authorization_token, :content_type, :url
+      attr_reader :src, :dst, :token_provider, :content_type
 
       def headers
         # headers all have to be strings, otherwise excon & Net::HTTP choke :-|
         {
-          'Authorization'                      => authorization_token,
           'X-Bz-File-Name'                     => (URI.encode dst.encode 'UTF-8'),
           'X-Bz-Content-Sha1'                  => sha1_digest,
           'Content-Length'                     => content_length.to_s,
@@ -63,6 +62,8 @@ module Backup
         end
       end
 
+      include Retry
+
       # upload with incorrect sha1 responds with
       #
       # {"code"=>"bad_request", "message"=>"Sha1 did not match data received", "status"=>400}
@@ -80,10 +81,16 @@ module Backup
       # "fileName"=>"test_file",
       # "uploadTimestamp"=>1532519508000}
       def call
-        # debugs = {debug_request: true, debug_response: true, instrumentor: Excon::StandardInstrumentor}
-        # rsp = Excon.post url, headers: headers, body: (File.read src), **debugs
-        rsp = Excon.post url, headers: headers, body: (File.read src)
-        HashWrap.from_json rsp.body
+        retry_upload 0, token_provider do |token_provider, retries|
+          Backup::Logger.info "#{src} retry #{retries}"
+          rsp = Excon.post \
+            token_provider.upload_url,
+            headers: (headers.merge 'Authorization' => token_provider.file_auth_token),
+            body: (File.read src),
+            expects: 200
+
+          HashWrap.from_json rsp.body
+        end
       end
 
       # Seems this doesn't work. Fails with
