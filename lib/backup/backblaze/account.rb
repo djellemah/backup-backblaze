@@ -6,8 +6,6 @@ require_relative 'hash_wrap'
 
 module Backup
   module Backblaze
-    # TODO X-Bz-Test-Mode: fail_some_uploads header to the b2_upload_file
-    # https://www.backblaze.com/b2/docs/integration_checklist.html
     class Account
       def initialize account_id:, app_key:
         @account_id = account_id

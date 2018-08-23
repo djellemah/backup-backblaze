@@ -29,13 +29,10 @@ module Backup
           # optional
           'X-Bz-Info-src_last_modified_millis' => last_modified_millis.to_s,
           'X-Bz-Info-b2-content-disposition'   => content_disposition,
-          # X-Bz-Info-*
         }.select{|k,v| v}
       end
 
-      # TODO mime lookup
       def content_type
-        # 'application/octet-stream'
         @content_type || 'b2/x-auto'
       end
 

@@ -20,15 +20,13 @@ module Backup
 
       attr_reader :src, :dst, :authorization_token, :url, :content_type, :part_size, :bucket_id
 
-      # TODO same as account
+      # same as account
       def auth_headers
         # only cos the double {{}} is a quite ugly :-p
         Hash headers: {'Authorization' => authorization_token}
       end
 
-      # TODO mime lookup
       def content_type
-        # 'application/octet-stream'
         @content_type || 'b2/x-auto'
       end
 
