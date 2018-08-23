@@ -37,7 +37,6 @@ module Backup
         {headers: {'Authorization' => authorization_token}}
       end
 
-
       def api_url
         body.apiUrl or raise NotFound, 'apiUrl'
       end

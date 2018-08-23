@@ -3,8 +3,8 @@ module Backup
     module Retry
       MAX_RETRIES = 3
 
-      # use the url and token returned by the next_url_token block, until we get a reset
-      # indicating that we need a new url and token.
+      # Use the url and token returned by the next_url_token block, until we get
+      # a reset indicating that we need a new url and token.
       class TokenProvider
         def initialize &next_url_token
           @next_url_token = next_url_token
