@@ -1,8 +1,5 @@
-require 'base64'
-require 'excon'
-require 'json'
-
 require_relative 'hash_wrap'
+require_relative 'api'
 
 module Backup
   module Backblaze
@@ -17,16 +14,25 @@ module Backup
 
       class NotFound < RuntimeError; end
 
+      extend Api
+
+      import_endpoint :b2_authorize_account do |fn|
+        # @body will be a Hashwrap
+        # TODO rename this to body_wrap
+
+        # have to set this here for retry-sequence
+        @body = fn[account_id, app_key]
+      end
+
+      # make sure all necessary api calls are implemented by this class.
+      validate_endpoint_dependencies
+
+      # This can be called by retry paths for various api calls. So it might end
+      # up needing synchronisation of some kind.
       def auth!
         # first call b2_authorize_account to get an account_auth_token
-        encoded = Base64.strict_encode64 "#{account_id}:#{app_key}"
-        rsp = Excon.get \
-          'https://api.backblazeb2.com/b2api/v1/b2_authorize_account',
-          headers: {'Authorization' => "Basic #{encoded}"},
-          expects: 200
-
         # this has to stick around because it has various important data
-        @body = HashWrap.from_json rsp.body
+        b2_authorize_account
 
         unless body.allowed.capabilities.include? 'writeFiles'
           raise "app_key #{app_key} does not have write access to account #{account_id}"
@@ -34,7 +40,9 @@ module Backup
       end
 
       def auth_headers
-        {headers: {'Authorization' => authorization_token}}
+        Hash headers: {
+          'Authorization' => authorization_token
+        }
       end
 
       def api_url
@@ -55,105 +63,58 @@ module Backup
       end
 
       # The following is leaning towards Bucket.new account, bucket_id/bucket_name
-
-      # returns [upload_url, auth_token]
-      # Several files can be uploaded to one url.
-      # But uploading files in parallel requires one upload url per thread.
-      def upload_url bucket_id:
-        # get the upload url for a specific bucket id. Buckets can be named.
-        body = {bucketId: bucket_id }
-        rsp = Excon.post \
-          "#{api_url}/b2api/v1/b2_get_upload_url",
-          **auth_headers,
-          body: body.to_json,
-          expects: 200
-
-        hw = HashWrap.from_json rsp.body
-        return hw.uploadUrl, hw.authorizationToken
+      # body is a hash of string => string
+      import_endpoint :b2_list_buckets do |fn, body|
+        body_wrap = fn[api_url, auth_headers, body]
       end
 
       # return id for given name, or nil if no such named bucket
       def bucket_id bucket_name:
-        rsp = Excon.post \
-          "#{api_url}/b2api/v1/b2_list_buckets",
-          **auth_headers,
-          body: {bucketName: bucket_name, accountId: account_id}.to_json,
-          expects: 200
-
-        buckets = (JSON.parse rsp.body)['buckets']
-        found = buckets.find do |ha|
-          ha['bucketName'] == bucket_name
-        end
-        found&.dig 'bucketId' or raise NotFound, "no bucket named #{bucket_name}"
+        buckets = b2_list_buckets(0, bucketName: bucket_name, accountId: account_id).buckets
+        found = buckets.find{|hw| hw.bucketName == bucket_name}
+        found&.bucketId or raise NotFound, "no bucket named #{bucket_name}"
       end
 
       # Hurhur
       def bucket_list bucket_id: nil
-        b2_list_buckets bucketId: bucket_id, accountId: account_id
+        b2_list_buckets 0, bucketId: bucket_id, accountId: account_id
       end
 
-      def b2_list_buckets body
-        rsp = Excon.post \
-          "#{api_url}/b2api/v1/b2_list_buckets",
-          **auth_headers,
-          body: body.select{|_,v|v}.to_json,
-          expects: 200
-
-        HashWrap.from_json rsp
+      import_endpoint :b2_list_file_names do |fn, body|
+        fn[api_url, auth_headers, body]
       end
 
       # This might be dangerous because large number of file names might come back.
       # But I'm not worrying about that now. Maybe later. Anyway, that's what
       # nextFile and startFile are for.
       def files bucket_name
-        rsp = Excon.post \
-          "#{api_url}/b2api/v1/b2_list_file_names",
-          **auth_headers,
-          body: {bucketId: (bucket_id bucket_name: bucket_name)}.to_json,
-          expects: 200
-
+        body_wrap = b2_list_file_names 0, bucketId: (bucket_id bucket_name: bucket_name)
         # ignoring the top-level {files:, nextFileName:} structure
-        files_hash = (JSON.parse rsp.body)['files']
-
-        # ignoring the top-level {files:, nextFileName:} structure
-        files_hash.map do |file_info_hash|
-          HashWrap.new file_info_hash
-        end
+        body_wrap.files
       end
 
       # This is mostly used to get a fileId for a given fileName
       def file_info bucket_name, filename
-        # It's too much of a PITA to make this Excon call in only one place
-        rsp = Excon.post \
-          "#{api_url}/b2api/v1/b2_list_file_names",
-          **auth_headers,
-          body: {bucketId: (bucket_id bucket_name: bucket_name), maxFileCount: 1, startFileName: filename}.to_json,
-          expects: 200
-
-        files_hash = (JSON.parse rsp.body)['files']
-
+        body_wrap = b2_list_file_names 0, bucketId: (bucket_id bucket_name: bucket_name), maxFileCount: 1, startFileName: filename
+        files_hash = body_wrap.files
         raise NotFound, "#{filename} not found" unless files_hash.size == 1
-
-        HashWrap.new files_hash.first
+        files_hash.first
       end
 
       # delete the named file in the named bucket
-      # https://www.backblaze.com/b2/docs/b2_delete_file_version.html
+      import_endpoint :b2_delete_file_version do |fn, body|
+        fn[api_url, auth_headers, body]
+      end
+
       def delete_file bucket_name, filename
         # lookup fileId from given filename
         info = file_info bucket_name, filename
-
-        # delete the fileId
-        Excon.post \
-          "#{api_url}/b2api/v1/b2_delete_file_version",
-          **auth_headers,
-          body: {fileName: filename, fileId: info.fileId}.to_json,
-          expects: 200
+        body_wrap = b2_delete_file_version 0, fileId: info.fileId, fileName: filename
 
       # ignore 400 with body containing "code": "file_not_present"
       rescue Excon::Errors::BadRequest => ex
-        hw = HashWrap.from_json ex.response.body
-        raise unless hw.code == 'file_not_present'
+        body_wrap = HashWrap.from_json ex.response.body
+        raise unless body_wrap.code == 'file_not_present'
       end
     end
   end

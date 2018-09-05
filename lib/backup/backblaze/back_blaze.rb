@@ -74,15 +74,11 @@ module Backup
           else
             Logger.info "Storing '#{dst}'"
 
-            # TODO could upload several files in parallel with several of these token_provider
-            token_provider = ::Backup::Backblaze::Retry::TokenProvider.new do
-              account.upload_url bucket_id: bucket_id
-            end
-
             ::Backup::Backblaze::UploadFile.new \
               src: src_pathname.to_s,
               dst: dst,
-              token_provider: token_provider
+              account: account,
+              bucket_id: bucket_id
           end
 
           hash_wrap = upload.call
