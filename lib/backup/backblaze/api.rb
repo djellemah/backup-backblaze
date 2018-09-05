@@ -2,6 +2,7 @@ require 'excon'
 require 'base64'
 
 require_relative 'hash_wrap'
+require_relative 'retry_lookup'
 
 module Backup
   module Backblaze
@@ -127,7 +128,7 @@ module Backup
         body_wrap = HashWrap.from_json ex.response.body
 
         # figure out which retry sequence to use
-        recovery_sequence = Backoff.retry_sequence api_call_name, ex.response.status, body_wrap.code
+        recovery_sequence = RetryLookup.retry_sequence api_call_name, ex.response.status, body_wrap.code
 
         if recovery_sequence.size == 1 && recovery_sequence.first == api_call_name
           # Retry strategy in this case is to just make the same call again.
@@ -152,87 +153,6 @@ module Backup
         # Socket errors etc therefore no http status code and no response body.
         # So just retry with default exponential backoff.
         call retries + 1, nil, api_call_name, &blk
-      end
-
-      def (Any = Object.new).=== other
-        true
-      end
-
-      module Matcher
-        refine Array do
-          def === other
-            return false unless size == other.size
-            size.times.all? do |idx|
-              self[idx] === other[idx]
-            end
-          end
-        end
-      end
-
-      using Matcher
-
-      # Generated using prolog
-      #
-      # Cross-product of all the retry scenarios we know about. This probably
-      # isn't the fastest way to calculate retries, but retries are rare. So the
-      # slowdown doesn't matter.
-      module_function def retry_sequence api_call, http_status, code
-        case [api_call.to_sym,        http_status, code.to_sym]
-        when [:b2_authorize_account, 408, Any]                   then [:b2_authorize_account]
-        when [:b2_authorize_account, 429, Any]                   then [:b2_authorize_account]
-        when [:b2_authorize_account, 500..599, Any]              then [:b2_authorize_account]
-        when [:b2_delete_file_version, 401, :expired_auth_token] then [:b2_authorize_account,:b2_delete_file_version]
-        when [:b2_delete_file_version, 401, :bad_auth_token]     then [:b2_authorize_account,:b2_delete_file_version]
-        when [:b2_delete_file_version, 408, Any]                 then [:b2_delete_file_version]
-        when [:b2_delete_file_version, 429, Any]                 then [:b2_delete_file_version]
-        when [:b2_delete_file_version, 500..599, Any]            then [:b2_delete_file_version]
-        when [:b2_finish_large_file, 401, :expired_auth_token]   then [:b2_authorize_account,:b2_finish_large_file]
-        when [:b2_finish_large_file, 401, :bad_auth_token]       then [:b2_authorize_account,:b2_finish_large_file]
-        when [:b2_finish_large_file, 408, Any]                   then [:b2_finish_large_file]
-        when [:b2_finish_large_file, 429, Any]                   then [:b2_finish_large_file]
-        when [:b2_finish_large_file, 500..599, Any]              then [:b2_finish_large_file]
-        when [:b2_get_upload_part_url, 401, :expired_auth_token] then [:b2_authorize_account,:b2_get_upload_part_url]
-        when [:b2_get_upload_part_url, 401, :bad_auth_token]     then [:b2_authorize_account,:b2_get_upload_part_url]
-        when [:b2_get_upload_part_url, 408, Any]                 then [:b2_get_upload_part_url]
-        when [:b2_get_upload_part_url, 429, Any]                 then [:b2_get_upload_part_url]
-        when [:b2_get_upload_part_url, 500..599, Any]            then [:b2_get_upload_part_url]
-        when [:b2_get_upload_url, 401, :expired_auth_token]      then [:b2_authorize_account,:b2_get_upload_url]
-        when [:b2_get_upload_url, 401, :bad_auth_token]          then [:b2_authorize_account,:b2_get_upload_url]
-        when [:b2_get_upload_url, 408, Any]                      then [:b2_get_upload_url]
-        when [:b2_get_upload_url, 429, Any]                      then [:b2_get_upload_url]
-        when [:b2_get_upload_url, 500..599, Any]                 then [:b2_get_upload_url]
-        when [:b2_list_buckets, 401, :expired_auth_token]        then [:b2_authorize_account,:b2_list_buckets]
-        when [:b2_list_buckets, 401, :bad_auth_token]            then [:b2_authorize_account,:b2_list_buckets]
-        when [:b2_list_buckets, 408, Any]                        then [:b2_list_buckets]
-        when [:b2_list_buckets, 429, Any]                        then [:b2_list_buckets]
-        when [:b2_list_buckets, 500..599, Any]                   then [:b2_list_buckets]
-        when [:b2_list_file_names, 401, :expired_auth_token]     then [:b2_authorize_account,:b2_list_file_names]
-        when [:b2_list_file_names, 401, :bad_auth_token]         then [:b2_authorize_account,:b2_list_file_names]
-        when [:b2_list_file_names, 408, Any]                     then [:b2_list_file_names]
-        when [:b2_list_file_names, 429, Any]                     then [:b2_list_file_names]
-        when [:b2_list_file_names, 500..599, Any]                then [:b2_list_file_names]
-        when [:b2_start_large_file, 401, :expired_auth_token]    then [:b2_authorize_account,:b2_start_large_file]
-        when [:b2_start_large_file, 401, :bad_auth_token]        then [:b2_authorize_account,:b2_start_large_file]
-        when [:b2_start_large_file, 408, Any]                    then [:b2_start_large_file]
-        when [:b2_start_large_file, 429, Any]                    then [:b2_start_large_file]
-        when [:b2_start_large_file, 500..599, Any]               then [:b2_start_large_file]
-        when [:b2_upload_part, 401, :expired_auth_token]         then [:b2_get_upload_part_url,:b2_upload_part]
-        when [:b2_upload_part, 401, :bad_auth_token]             then [:b2_get_upload_part_url,:b2_upload_part]
-        when [:b2_upload_part, 408, Any]                         then [:b2_get_upload_part_url,:b2_upload_part]
-        when [:b2_upload_part, 500..599, Any]                    then [:b2_get_upload_part_url,:b2_upload_part]
-        when [:b2_upload_part, 429, Any]                         then [:b2_upload_part]
-        when [:b2_upload_file, 401, :expired_auth_token]         then [:b2_get_upload_url,:b2_upload_file]
-        when [:b2_upload_file, 401, :bad_auth_token]             then [:b2_get_upload_url,:b2_upload_file]
-        when [:b2_upload_file, 408, Any]                         then [:b2_get_upload_url,:b2_upload_file]
-        when [:b2_upload_file, 500..599, Any]                    then [:b2_get_upload_url,:b2_upload_file]
-        when [:b2_upload_file, 429, Any]                         then [:b2_upload_file]
-        when [:b2_list_file_names, 401, :expired_auth_token]     then [:b2_authorize_account,:b2_list_file_names]
-        when [:b2_list_file_names, 401, :bad_auth_token]         then [:b2_authorize_account,:b2_list_file_names]
-        when [:b2_list_file_names, 408, Any]                     then [:b2_list_file_names]
-        when [:b2_list_file_names, 429, Any]                     then [:b2_list_file_names]
-        when [:b2_list_file_names, 500..599, Any]                then [:b2_list_file_names]
-        else [] # No retry. eg 400 and most 401 should just fail immediately
-        end
       end
     end
 
