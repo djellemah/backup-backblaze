@@ -1,12 +1,8 @@
-require 'excon'
-require 'base64'
-require 'json'
 require 'pathname'
 
 require_relative 'upload_file.rb'
 require_relative 'upload_large_file.rb'
 require_relative 'account.rb'
-require_relative 'retry.rb'
 
 require 'backup/storage/base'
 
