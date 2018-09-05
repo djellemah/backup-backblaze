@@ -36,7 +36,7 @@ module Backup
           # optional
           'X-Bz-Info-src_last_modified_millis' => last_modified_millis.to_s,
           'X-Bz-Info-b2-content-disposition'   => content_disposition,
-        }.select{|k,v| v}
+        }.merge(TEST_HEADERS).select{|k,v| v}
       end
 
       def content_type
@@ -74,7 +74,7 @@ module Backup
       import_endpoint :b2_get_upload_url do |fn|
         headers = {
           'Authorization' => account.authorization_token,
-        }
+        }.merge(TEST_HEADERS)
         body_wrap = fn[account.api_url, headers, bucket_id]
 
         # have to set this here for when this gets called by a retry-sequence

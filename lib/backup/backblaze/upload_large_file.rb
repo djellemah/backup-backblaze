@@ -24,7 +24,7 @@ module Backup
         # only cos the double {{}} is a quite ugly :-p
         Hash headers: {
           'Authorization' => account.authorization_token,
-        }
+        }.merge(TEST_HEADERS)
       end
 
       def content_type
@@ -90,7 +90,7 @@ module Backup
           'X-Bz-Part-Number' => sequence + 1,
           'Content-Length' => bytes.length,
           'X-Bz-Content-Sha1' => sha,
-        }
+        }.merge(TEST_HEADERS)
 
         fn[url_token.url, headers, bytes]
       end

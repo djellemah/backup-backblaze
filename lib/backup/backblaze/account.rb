@@ -41,8 +41,8 @@ module Backup
 
       def auth_headers
         Hash headers: {
-          'Authorization' => authorization_token
-        }
+          'Authorization' => authorization_token,
+        }.merge(TEST_HEADERS)
       end
 
       def api_url
