@@ -1,3 +1,5 @@
+require 'json'
+
 module Backup
   module Backblaze
     # Intended as a quick-n-dirty way to deep-wrap json objects.
