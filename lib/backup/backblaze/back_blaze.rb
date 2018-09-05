@@ -67,8 +67,7 @@ module Backup
             ::Backup::Backblaze::UploadLargeFile.new \
               src: src_pathname,
               dst: dst,
-              authorization_token: account.authorization_token,
-              url: account.api_url,
+              account: account,
               part_size: working_part_size,
               bucket_id: bucket_id
           else

@@ -307,6 +307,56 @@ module Backup
           expects: 200
         HashWrap.from_json rsp.body
       end
+
+      module_function def b2_start_large_file api_url, auth_headers, body
+        rsp = Excon.post \
+          "#{api_url}/b2api/v1/b2_start_large_file",
+          **auth_headers,
+          body: body.to_json,
+          expects: 200
+
+        HashWrap.from_json rsp.body
+      end
+
+      module_function def b2_get_upload_part_url api_url, auth_headers, file_id
+        rsp = Excon.post \
+          "#{api_url}/b2api/v1/b2_get_upload_part_url",
+          **auth_headers,
+          body: {fileId: file_id}.to_json,
+          expects: 200
+
+        HashWrap.from_json rsp.body
+      end
+
+      # NOTE Is there a way to stream this instead of loading multiple 100M chunks
+      # into memory? No, backblaze does not allow parts to use chunked encoding.
+      module_function def b2_upload_part upload_url, headers, bytes
+        # Yes, this is a different pattern to the other Excon.post calls ¯\_(ツ)_/¯
+        rsp = Excon.post \
+          upload_url,
+          headers: headers,
+          body: bytes,
+          expects: 200
+
+        # 200 response will be
+        # fileId The unique ID for this file.
+        # partNumber Which part this is.
+        # contentLength The number of bytes stored in the part.
+        # contentSha1 The SHA1 of the bytes stored in the part.
+
+        HashWrap.from_json rsp.body
+      end
+
+      module_function def b2_finish_large_file api_url, auth_headers, file_id, shas
+        rsp = Excon.post \
+          "#{api_url}/b2api/v1/b2_finish_large_file",
+          **auth_headers,
+          body: {fileId: file_id, partSha1Array: shas }.to_json,
+          expects: 200
+
+        HashWrap.from_json rsp.body
+      end
+
     end
   end
 end
