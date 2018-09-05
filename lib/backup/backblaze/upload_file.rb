@@ -1,6 +1,7 @@
 require 'digest'
 
-require_relative 'retry.rb'
+require_relative 'api'
+require_relative 'url_token'
 
 module Backup
   module Backblaze
@@ -9,14 +10,20 @@ module Backup
     #
     # dst can contain / for namespaces
     class UploadFile
-      def initialize src:, dst:, token_provider:, content_type: nil
+      def initialize account:, src:, bucket_id:, dst:, url_token: nil, content_type: nil
+        @account = account
         @src = src
         @dst = dst
         @content_type = content_type
-        @token_provider = token_provider
+        @bucket_id = bucket_id
+        @url_token = url_token
       end
 
-      attr_reader :src, :dst, :token_provider, :content_type
+      attr_reader :account, :src, :dst, :bucket_id, :content_type
+
+      def url_token
+        @url_token or b2_get_upload_url
+      end
 
       def headers
         # headers all have to be strings, otherwise excon & Net::HTTP choke :-|
@@ -59,35 +66,37 @@ module Backup
         end
       end
 
-      include Retry
+      extend Api
 
-      # upload with incorrect sha1 responds with
-      #
-      # {"code"=>"bad_request", "message"=>"Sha1 did not match data received", "status"=>400}
-      #
-      # Normal response
-      #
-      #{"accountId"=>"d765e276730e",
-      # "action"=>"upload",
-      # "bucketId"=>"dd8786b5eef2c7d66743001e",
-      # "contentLength"=>6144,
-      # "contentSha1"=>"5ba6cf1b3b3a088d73941052f60e78baf05d91fd",
-      # "contentType"=>"application/octet-stream",
-      # "fileId"=>"4_zdd8786b5eef2c7d66743001e_f1096f3027e0b1927_d20180725_m115148_c002_v0001095_t0047",
-      # "fileInfo"=>{"src_last_modified_millis"=>"1532503455580"},
-      # "fileName"=>"test_file",
-      # "uploadTimestamp"=>1532519508000}
+      # returns [upload_url, auth_token]
+      # Several files can be uploaded to one url.
+      # But uploading files in parallel requires one upload url per thread.
+      import_endpoint :b2_get_upload_url do |fn|
+        headers = {
+          'Authorization' => account.authorization_token,
+        }
+        body_wrap = fn[account.api_url, headers, bucket_id]
+
+        # have to set this here for when this gets called by a retry-sequence
+        @url_token = UrlToken.new body_wrap.uploadUrl, body_wrap.authorizationToken
+      end
+
+      import_endpoint :b2_upload_file do |fn|
+        fn[src, headers, url_token]
+      end
+
+      # match with re
+      def b2_authorize_account(retries = 0)
+        account.b2_authorize_account retries
+      end
+
       def call
-        retry_upload 0, token_provider do |token_provider, retries|
-          Backup::Logger.info "#{src} retry #{retries}"
-          rsp = Excon.post \
-            token_provider.upload_url,
-            headers: (headers.merge 'Authorization' => token_provider.file_auth_token),
-            body: (File.read src),
-            expects: 200
+        Backup::Logger.info "upload #{src}"
 
-          HashWrap.from_json rsp.body
-        end
+        # not necessary, but makes the flow of control more obvious in the logs
+        url_token
+
+        b2_upload_file
       end
 
       # Seems this doesn't work. Fails with
