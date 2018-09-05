@@ -1,6 +1,5 @@
 require 'digest'
 require_relative 'hash_wrap'
-require_relative 'retry'
 
 module Backup
   module Backblaze
