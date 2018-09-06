@@ -1,5 +1,5 @@
 require_relative 'hash_wrap'
-require_relative 'api'
+require_relative 'api_importer'
 
 module Backup
   module Backblaze
@@ -14,7 +14,7 @@ module Backup
 
       class NotFound < RuntimeError; end
 
-      extend Api
+      extend ApiImporter
 
       import_endpoint :b2_authorize_account do |fn|
         # @body will be a Hashwrap
@@ -23,9 +23,6 @@ module Backup
         # have to set this here for retry-sequence
         @body = fn[account_id, app_key]
       end
-
-      # make sure all necessary api calls are implemented by this class.
-      validate_endpoint_dependencies
 
       # This can be called by retry paths for various api calls. So it might end
       # up needing synchronisation of some kind.

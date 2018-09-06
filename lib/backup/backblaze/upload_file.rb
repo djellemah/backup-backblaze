@@ -1,6 +1,6 @@
 require 'digest'
 
-require_relative 'api'
+require_relative 'api_importer'
 require_relative 'url_token'
 
 module Backup
@@ -66,7 +66,7 @@ module Backup
         end
       end
 
-      extend Api
+      extend ApiImporter
 
       # returns [upload_url, auth_token]
       # Several files can be uploaded to one url.

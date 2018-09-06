@@ -1,5 +1,7 @@
 require 'digest'
-require_relative 'hash_wrap'
+
+require_relative 'api_importer'
+require_relative 'url_token'
 
 module Backup
   module Backblaze
@@ -46,7 +48,7 @@ module Backup
         end
       end
 
-      extend Api
+      extend ApiImporter
 
       import_endpoint :b2_start_large_file do |fn|
         body = {
