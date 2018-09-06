@@ -91,7 +91,7 @@ module Backup
       end
 
       def call
-        Backup::Logger.info "upload #{src}"
+        Backup::Logger.info "uploading '#{dst}' of #{src.size}"
 
         # not necessary, but makes the flow of control more obvious in the logs
         url_token

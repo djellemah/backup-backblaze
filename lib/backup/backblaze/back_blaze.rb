@@ -63,7 +63,6 @@ module Backup
 
           upload =
           if src_pathname.size > working_part_size * 2.5 || src_pathname.size > 5 * 10**9
-            Logger.info "Storing Large '#{dst}'"
             ::Backup::Backblaze::UploadLargeFile.new \
               src: src_pathname,
               dst: dst,
@@ -71,8 +70,6 @@ module Backup
               part_size: working_part_size,
               bucket_id: bucket_id
           else
-            Logger.info "Storing '#{dst}'"
-
             ::Backup::Backblaze::UploadFile.new \
               src: src_pathname.to_s,
               dst: dst,

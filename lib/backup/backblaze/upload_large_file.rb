@@ -85,10 +85,14 @@ module Backup
         @url_token = UrlToken.new body_wrap.uploadUrl, body_wrap.authorizationToken
       end
 
+      def part_count
+        @part_count ||= (src.size / part_size.to_r).ceil
+      end
+
       # NOTE Is there a way to stream this instead of loading multiple 100M chunks
       # into memory? No, backblaze does not allow parts to use chunked encoding.
       import_endpoint :b2_upload_part do |fn, sequence, bytes, sha|
-        Backup::Logger.info "#{src} trying part #{sequence + 1} of #{(src.size / part_size.to_r).ceil}"
+        Backup::Logger.info "#{src} trying part #{sequence + 1} of #{part_count}"
 
         # not the same as the auth_headers value
         headers = {
