@@ -92,28 +92,8 @@ module Backup
 
       def call
         Backup::Logger.info "uploading '#{dst}' of #{src.size}"
-
-        # not necessary, but makes the flow of control more obvious in the logs
-        url_token
-
+        url_token # not necessary, but makes the flow of control more obvious in the logs
         b2_upload_file
-      end
-
-      # Seems this doesn't work. Fails with
-      #
-      # 400 Missing header: Content-Length
-      #
-      # Probably because chunked encoding doesn't send an initial Content-Length
-      private def excon_stream_upload( upload )
-        File.open src do |io|
-          chunker = lambda do
-            # Excon.defaults[:chunk_size] defaults to 1048576, ie 1MB
-            # to_s will convert the nil received after everything is read to the final empty chunk
-            io.read(Excon.defaults[:chunk_size]).to_s
-          end
-
-          Excon.post url, headers: headers, :request_block => chunker, debug_request: true, debug_response: true, instrumentor: Excon::StandardInstrumentor
-        end
       end
     end
   end

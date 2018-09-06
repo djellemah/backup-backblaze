@@ -63,14 +63,14 @@ module Backup
 
           upload =
           if src_pathname.size > working_part_size * 2.5 || src_pathname.size > 5 * 10**9
-            ::Backup::Backblaze::UploadLargeFile.new \
+            Backblaze::UploadLargeFile.new \
               src: src_pathname,
               dst: dst,
               account: account,
               part_size: working_part_size,
               bucket_id: bucket_id
           else
-            ::Backup::Backblaze::UploadFile.new \
+            Backblaze::UploadFile.new \
               src: src_pathname.to_s,
               dst: dst,
               account: account,
@@ -104,7 +104,7 @@ module Backup
         @account ||= begin
           account_deets = {account_id: account_id}
           Logger.info "Account login for #{account_deets.inspect}"
-          ::Backup::Backblaze::Account.new account_id: account_id, app_key: app_key
+          Backblaze::Account.new account_id: account_id, app_key: app_key
         end
       end
     end

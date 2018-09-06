@@ -81,7 +81,7 @@ module Backup
       end
 
       import_endpoint :b2_get_upload_part_url do |fn|
-        body_wrap = fn[account.api_url, auth_headers, file_id ]
+        body_wrap = fn[account.api_url, auth_headers, file_id]
         @url_token = UrlToken.new body_wrap.uploadUrl, body_wrap.authorizationToken
       end
 

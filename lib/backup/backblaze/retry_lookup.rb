@@ -3,9 +3,7 @@ require 'set'
 module Backup
   module Backblaze
     module RetryLookup
-      def (Any = Object.new).=== other
-        true
-      end
+      def (Any = Object.new).=== _other; true end
 
       module Matcher
         refine Array do
