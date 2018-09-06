@@ -68,6 +68,11 @@ module Backup
 
       extend ApiImporter
 
+      # needed for retry logic
+      def b2_authorize_account(retries = 0)
+        account.b2_authorize_account retries
+      end
+
       # returns [upload_url, auth_token]
       # Several files can be uploaded to one url.
       # But uploading files in parallel requires one upload url per thread.
@@ -83,11 +88,6 @@ module Backup
 
       import_endpoint :b2_upload_file do |fn|
         fn[src, headers, url_token]
-      end
-
-      # match with re
-      def b2_authorize_account(retries = 0)
-        account.b2_authorize_account retries
       end
 
       def call

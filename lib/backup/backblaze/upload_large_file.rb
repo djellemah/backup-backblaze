@@ -50,6 +50,11 @@ module Backup
 
       extend ApiImporter
 
+      # needed for retry logic
+      def b2_authorize_account(retries = 0)
+        account.b2_authorize_account retries
+      end
+
       import_endpoint :b2_start_large_file do |fn|
         body = {
           bucketId: bucket_id,
