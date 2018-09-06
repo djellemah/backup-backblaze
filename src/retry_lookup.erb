@@ -1,0 +1,43 @@
+require 'set'
+
+module Backup
+  module Backblaze
+    module RetryLookup
+      def (Any = Object.new).=== other
+        true
+      end
+
+      module Matcher
+        refine Array do
+          def === other
+            return false unless size == other.size
+            size.times.all? do |idx|
+              self[idx] === other[idx]
+            end
+          end
+        end
+      end
+
+      using Matcher
+
+      # Generated from retry.pl
+      #
+      # Cross-product of all the retry scenarios we know about. This probably
+      # isn't the fastest way to calculate retries, but retries are rare. So the
+      # slowdown doesn't matter.
+      module_function def retry_sequence api_call, http_status, code
+        case [api_call.to_sym,        http_status, code.to_sym]
+<%= `swipl -q -l #{__dir__}/retry.pl -t to_whens`.gsub(/^(\s*)/, '        ') -%>
+        else [] # No retry. eg 400 and most 401 should just fail immediately
+        end
+      end
+
+      module_function def retry_dependencies
+        @retry_dependencies ||= begin
+          # didn't want to fight with prolog to generate uniq values here, so just let ruby do it.
+<%= `swipl -q -l #{__dir__}/retry.pl -t to_map`.gsub(/^(\s*)/, '          ') -%>
+        end
+      end
+    end
+  end
+end
