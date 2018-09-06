@@ -113,15 +113,8 @@ module Backup
       # 10000 is backblaze specified max number of parts
       MAX_PARTS = 10000
 
-      def call
-        if src.size > part_size * MAX_PARTS
-          raise Error, "File #{src.to_s} has size #{src.size} which is larger than part_size * MAX_PARTS #{part_size * MAX_PARTS}. Try increasing part_size in model."
-        end
-
-        # try to re-use existing url token if there is one
-        url_token
-
-        shas = (0...MAX_PARTS).each_with_object [] do |sequence, shas|
+      def upload_parts
+        (0...MAX_PARTS).each_with_object [] do |sequence, shas|
           # read length, offset
           bytes = src.read part_size, part_size * sequence
 
@@ -135,6 +128,18 @@ module Backup
             shas << sha
           end
         end
+      end
+
+      def call
+        if src.size > part_size * MAX_PARTS
+          raise Error, "File #{src.to_s} has size #{src.size} which is larger than part_size * MAX_PARTS #{part_size * MAX_PARTS}. Try increasing part_size in model."
+        end
+
+        Logger.info "uploading '#{src}' to #{dst}' of #{src.size} in #{part_count} parts"
+
+        b2_start_large_file # not really necessary, but makes the flow clearer
+        url_token # try to re-use existing url token if there is one
+        shas = upload_parts
 
         # finish up, log and return the response
         hash_wrap = b2_finish_large_file 0, shas
