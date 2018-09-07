@@ -8,14 +8,17 @@ module Backup
       # This is raised when a an api endpoint needs to be retried in a
       # complicate way.
       class RetrySequence < StandardError
-        def initialize retry_sequence
+        def initialize retry_sequence, backoff
           unless retry_sequence.is_a?(Array) && retry_sequence.all?{|s| Symbol === s}
             raise "provide an array of symbols in #{@retry_sequence.inspect}"
           end
 
           super retry_sequence.inspect
           @retry_sequence = retry_sequence
+          @backoff = backoff
         end
+
+        attr_reader :backoff
 
         def each &blk
           return enum_for :each unless block_given?
@@ -63,7 +66,7 @@ module Backup
         # That's quite hard cos it will have to have access to the calling self
         if recovery_sequence.any?
           ::Backup::Logger.info "recovery sequence of #{recovery_sequence.inspect}"
-          raise RetrySequence, recovery_sequence
+          raise RetrySequence.new(recovery_sequence, backoff)
         else
           raise
         end

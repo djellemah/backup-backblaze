@@ -51,8 +51,8 @@ module Backup
       extend ApiImporter
 
       # needed for retry logic
-      def b2_authorize_account(retries = 0)
-        account.b2_authorize_account retries
+      def b2_authorize_account(retries:, backoff:)
+        account.b2_authorize_account retries: retries, backoff: backoff
       end
 
       import_endpoint :b2_start_large_file do |fn|
@@ -123,7 +123,7 @@ module Backup
             break shas
           else
             sha = Digest::SHA1.hexdigest bytes
-            b2_upload_part 0, sequence, bytes, sha
+            b2_upload_part sequence, bytes, sha
             Backup::Logger.info "#{src} stored part #{sequence + 1} with #{sha}"
             shas << sha
           end
@@ -142,7 +142,7 @@ module Backup
         shas = upload_parts
 
         # finish up, log and return the response
-        hash_wrap = b2_finish_large_file 0, shas
+        hash_wrap = b2_finish_large_file shas
         Backup::Logger.info "#{src} finished"
         hash_wrap
       end

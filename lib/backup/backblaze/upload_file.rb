@@ -69,8 +69,8 @@ module Backup
       extend ApiImporter
 
       # needed for retry logic
-      def b2_authorize_account(retries = 0)
-        account.b2_authorize_account retries
+      def b2_authorize_account(retries:, backoff:)
+        account.b2_authorize_account retries: retries, backoff: backoff
       end
 
       # returns [upload_url, auth_token]

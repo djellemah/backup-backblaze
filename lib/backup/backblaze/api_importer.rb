@@ -63,15 +63,16 @@ module Backup
 
         # Define the api method on the class, mainly so we end with an instance
         # method we can call using the symbols in the retry_sequence.
-        define_method callable_name do |retries = 0, *args|
+        # define_method callable_name do |*args, retries: 0, backoff: nil|
+        define_method callable_name do |*args, retries: 0, backoff: nil, **kwargs|
           begin
             # initiate retries
-            Retry.call retries, nil, callable_name do
+            Retry.call retries, backoff, callable_name do
               # Execute bind_blk in the context of self, and pass it the
               # callable_thing along with the args. bind_blk must then call
               # callable_thing with whatever arguments it needs.
               # bind_blk can also deal with the return values from callable_thing
-              instance_exec callable_thing, *args, &bind_blk
+              instance_exec callable_thing, *args, **kwargs, &bind_blk
             end
           rescue Retry::RetrySequence => retry_sequence
             retry_sequence.reduce nil do |_rv, method_name|
@@ -79,9 +80,9 @@ module Backup
                 # we assume that methods with the same name as the original can
                 # receive the same set of arguments as specified in the original
                 # call.
-                send method_name, retries + 1, *args
+                send method_name, *args, retries: retries + 1, backoff: retry_sequence.backoff
               else
-                send method_name, retries + 1
+                send method_name, retries: retries + 1, backoff: retry_sequence.backoff
               end
             end
           end

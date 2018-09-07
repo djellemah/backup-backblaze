@@ -65,14 +65,14 @@ module Backup
 
       # return id for given name, or nil if no such named bucket
       def bucket_id bucket_name:
-        buckets = b2_list_buckets(0, bucketName: bucket_name, accountId: account_id).buckets
+        buckets = b2_list_buckets(bucketName: bucket_name, accountId: account_id).buckets
         found = buckets.find{|hw| hw.bucketName == bucket_name}
         found&.bucketId or raise NotFound, "no bucket named #{bucket_name}"
       end
 
       # Hurhur
       def bucket_list bucket_id: nil
-        b2_list_buckets 0, bucketId: bucket_id, accountId: account_id
+        b2_list_buckets bucketId: bucket_id, accountId: account_id
       end
 
       import_endpoint :b2_list_file_names do |fn, body|
@@ -83,14 +83,14 @@ module Backup
       # But I'm not worrying about that now. Maybe later. Anyway, that's what
       # nextFile and startFile are for.
       def files bucket_name
-        body_wrap = b2_list_file_names 0, bucketId: (bucket_id bucket_name: bucket_name)
+        body_wrap = b2_list_file_names bucketId: (bucket_id bucket_name: bucket_name)
         # ignoring the top-level {files:, nextFileName:} structure
         body_wrap.files
       end
 
       # This is mostly used to get a fileId for a given fileName
       def file_info bucket_name, filename
-        body_wrap = b2_list_file_names 0, bucketId: (bucket_id bucket_name: bucket_name), maxFileCount: 1, startFileName: filename
+        body_wrap = b2_list_file_names bucketId: (bucket_id bucket_name: bucket_name), maxFileCount: 1, startFileName: filename
         files_hash = body_wrap.files
         raise NotFound, "#{filename} not found" unless files_hash.size == 1
         files_hash.first
@@ -104,7 +104,7 @@ module Backup
       def delete_file bucket_name, filename
         # lookup fileId from given filename
         info = file_info bucket_name, filename
-        body_wrap = b2_delete_file_version 0, fileId: info.fileId, fileName: filename
+        body_wrap = b2_delete_file_version fileId: info.fileId, fileName: filename
 
       # ignore 400 with body containing "code": "file_not_present"
       rescue Excon::Errors::BadRequest => ex
