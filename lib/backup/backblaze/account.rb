@@ -10,18 +10,16 @@ module Backup
         auth!
       end
 
-      attr_reader :account_id, :app_key, :body
+      attr_reader :account_id, :app_key, :body_wrap
 
       class NotFound < RuntimeError; end
 
       extend ApiImporter
 
       import_endpoint :b2_authorize_account do |fn|
-        # @body will be a Hashwrap
-        # TODO rename this to body_wrap
-
-        # have to set this here for retry-sequence
-        @body = fn[account_id, app_key]
+        # @body_wrap will be a Hashwrap
+        # have to set this here for retry-sequence to work properly
+        @body_wrap = fn[account_id, app_key]
       end
 
       # This can be called by retry paths for various api calls. So it might end
@@ -31,7 +29,7 @@ module Backup
         # this has to stick around because it has various important data
         b2_authorize_account
 
-        unless body.allowed.capabilities.include? 'writeFiles'
+        unless body_wrap.allowed.capabilities.include? 'writeFiles'
           raise "app_key #{app_key} does not have write access to account #{account_id}"
         end
       end
@@ -43,20 +41,20 @@ module Backup
       end
 
       def api_url
-        body.apiUrl or raise NotFound, 'apiUrl'
+        body_wrap.apiUrl or raise NotFound, 'apiUrl'
       end
 
       def authorization_token
-        body.authorizationToken or raise NotFound, 'authorizationToken'
+        body_wrap.authorizationToken or raise NotFound, 'authorizationToken'
       end
 
       def minimum_part_size
         # why b2 has this as well as minimumPartSize ¯\_(ツ)_/¯
-        body.absoluteMinimumPartSize
+        body_wrap.absoluteMinimumPartSize
       end
 
       def recommended_part_size
-        body.recommendedPartSize
+        body_wrap.recommendedPartSize
       end
 
       # The following is leaning towards Bucket.new account, bucket_id/bucket_name
