@@ -8,30 +8,6 @@ end
 RSpec.describe Backup::Backblaze::Retry do
   MAX_RETRIES = Backup::Backblaze::Retry::MAX_RETRIES
 
-  def stub_b2_list_buckets( body = nil )
-    Excon.stub \
-      (Hash path: '/api/b2api/v1/b2_list_buckets'),
-      body || (Hash body: (YAML.load <<-EOY).to_json, status: 200)
-        buckets:
-        - accountId: d54a2f1e963b
-          bucketId: 53e4dc20f68719ab
-          bucketInfo: {}
-          bucketName: magoodyhey
-          bucketType: allPrivate
-          corsRules: []
-          lifecycleRules: []
-          revision: 2
-        - accountId: d54a2f1e963b
-          bucketId: 9750fb6a1c8d432e
-          bucketInfo: {}
-          bucketName: rootet
-          bucketType: allPrivate
-          corsRules: []
-          lifecycleRules: []
-          revision: 2
-      EOY
-  end
-
   def bad_auth_401_body
     Hash body: {code: 'bad_auth_token'}.to_json, status: 401
   end
@@ -106,6 +82,7 @@ RSpec.describe Backup::Backblaze::Retry do
       Hash.new,
       -> req do
         rsp = {:body => {code: 'all stubbed error'}, :status => 500}
+        hw = Backup::Backblaze::HashWrap.new req
         binding.pry
         rsp.to_json
       end
@@ -113,26 +90,49 @@ RSpec.describe Backup::Backblaze::Retry do
     stub_b2_authorize_account
   end
 
-  describe Backup::Backblaze::Account do
-    let :account do
-      described_class.new account_id: 'c0ffee', app_key: '7ea'
+  let :account do
+    Backup::Backblaze::Account.new account_id: 'c0ffee', app_key: '7ea'
+  end
+
+  # test for call that backs up to b2_authorize_account
+  describe 'b2_list_buckets' do
+    def stub_b2_list_buckets( body = nil )
+      Excon.stub \
+        (Hash path: '/api/b2api/v1/b2_list_buckets'),
+        body || (Hash body: (YAML.load <<-EOY).to_json, status: 200)
+          buckets:
+          - accountId: d54a2f1e963b
+            bucketId: 53e4dc20f68719ab
+            bucketInfo: {}
+            bucketName: magoodyhey
+            bucketType: allPrivate
+            corsRules: []
+            lifecycleRules: []
+            revision: 2
+          - accountId: d54a2f1e963b
+            bucketId: 9750fb6a1c8d432e
+            bucketInfo: {}
+            bucketName: rootet
+            bucketType: allPrivate
+            corsRules: []
+            lifecycleRules: []
+            revision: 2
+        EOY
     end
 
-    # all used calls given by
-    # Backup::Backblaze::RetryLookup.retry_dependencies.keys
-    describe 'b2_list_buckets' do
-      it 'success with no retries' do
-        account.should_receive(:b2_authorize_account).exactly(0).times
-        account.should_receive(:b2_list_buckets).exactly(1).times.and_call_original
+    it 'success with no retries' do
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      account.should_receive(:b2_list_buckets).exactly(1).times.and_call_original
 
-        list_buckets_stub = stub_b2_list_buckets
-        bucket_list = account.bucket_list
-        bucket_list.should be_a(Backup::Backblaze::HashWrap)
-        bucket_list.buckets.size.should == 2
-      end
+      stub_b2_list_buckets
+      bucket_list = account.bucket_list
+      bucket_list.should be_a(Backup::Backblaze::HashWrap)
+      bucket_list.buckets.size.should == 2
+    end
 
-      it 'retries on 401 bad auth', body: :bad_auth_401_body do |_example|
-        stub_b2_list_buckets bad_auth_401_body
+    %i[bad_auth_401_body expired_auth_401_body].each do |bad_body|
+      it "retries on #{bad_body}" do |_example|
+        stub_b2_list_buckets send(bad_body)
 
         # re-auth because bad_auth_401_body
         account.should_receive(:b2_authorize_account).exactly(MAX_RETRIES).times.and_call_original
@@ -143,60 +143,184 @@ RSpec.describe Backup::Backblaze::Retry do
         # and finally raise a too many retries error
         ->{account.bucket_list}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
       end
+    end
 
-      it 'retries on 401 expired auth' do
-        stub_b2_list_buckets expired_auth_401_body
-        account.should_receive(:b2_authorize_account).exactly(MAX_RETRIES).times.and_call_original
-        account.should_receive(:b2_list_buckets).exactly(MAX_RETRIES).times.and_call_original
-        ->{account.bucket_list}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
-      end
+    # These two have different bad bodies. *and* different exceptions. So don't each them.
+    it 'no retry for unknown 401 body code' do
+      stub_b2_list_buckets unknown_401_body
+      account.should_receive(:b2_authorize_account).exactly(0).times.and_call_original
+      account.should_receive(:b2_list_buckets).exactly(1).times.and_call_original
+      ->{account.bucket_list}.should raise_error(Excon::Errors::Unauthorized)
+    end
 
-      it 'no retry for unknown 401 body code' do
-        stub_b2_list_buckets unknown_401_body
-        account.should_receive(:b2_authorize_account).exactly(0).times.and_call_original
-        account.should_receive(:b2_list_buckets).exactly(1).times.and_call_original
-        ->{account.bucket_list}.should raise_error(Excon::Errors::Unauthorized)
-      end
+    it 'no retry for 403' do
+      stub_b2_list_buckets server_403_body
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      account.should_receive(:b2_list_buckets).exactly(1).times.and_call_original
+      ->{account.bucket_list}.should raise_error(Excon::Errors::Forbidden)
+    end
 
-      it 'retries on server error, without auth retry' do
-        stub_b2_list_buckets server_503_body
+    %i[server_503_body server_408_body].each do |bad_body|
+      it "retries on #{bad_body}, without auth retry" do
+        stub_b2_list_buckets send(bad_body)
         account.should_receive(:b2_authorize_account).exactly(0).times
         account.should_receive(:b2_list_buckets).exactly(MAX_RETRIES+1).times.and_call_original
         ->{account.bucket_list}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
       end
+    end
 
-      it 'retries for 408, without auth retry' do
-        stub_b2_list_buckets server_408_body
-        account.should_receive(:b2_authorize_account).exactly(0).times
-        account.should_receive(:b2_list_buckets).exactly(MAX_RETRIES+1).times.and_call_original
-        ->{account.bucket_list}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
-      end
+    it 'retries for 429, no auth retry, with Retry-After' do
+      stub_b2_list_buckets server_429_body
+      account.should_receive(:b2_authorize_account).exactly(0).times
 
-      it 'retries for 429, no auth retry, with Retry-After' do
-        stub_b2_list_buckets server_429_body
-        account.should_receive(:b2_authorize_account).exactly(0).times
-
-        # not sure why we need +1 here
-        account.should_receive(:b2_list_buckets).exactly(MAX_RETRIES+1).times do |*args,**kwargs|
-          # backoff is an optional arg
-          if backoff = kwargs[:backoff]
-            backoff.should == server_429_body[:headers]['Retry-After']
-          end
-
-          # Ok now jump through flaming hoops of flaming fire to get the original
-          # b2_list_buckets method. Because we can't get at and_call_original from here.
-          account.class.instance_method(:b2_list_buckets).bind(account).call(*args, **kwargs)
+      # not sure why we need +1 here
+      account.should_receive(:b2_list_buckets).exactly(MAX_RETRIES+1).times do |*args,**kwargs|
+        # backoff is an optional arg
+        if backoff = kwargs[:backoff]
+          backoff.should == server_429_body[:headers]['Retry-After']
         end
 
-        ->{account.bucket_list}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
+        # Ok now jump through flaming hoops of flaming fire to get the original
+        # b2_list_buckets method. Because we can't get at and_call_original from here.
+        account.class.instance_method(:b2_list_buckets).bind(account).call(*args, **kwargs)
       end
 
-      it 'no retry for 403' do
-        stub_b2_list_buckets server_403_body
-        account.should_receive(:b2_authorize_account).exactly(0).times
-        account.should_receive(:b2_list_buckets).exactly(1).times.and_call_original
-        ->{account.bucket_list}.should raise_error(Excon::Errors::Forbidden)
+      ->{account.bucket_list}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
+    end
+  end
+
+  # test for call that backs up to b2_get_upload_url
+  describe 'b2_upload_file' do
+    def stub_b2_upload_file( body = nil )
+      Excon.stub \
+        (Hash path: '/api/b2api/v1/b2_upload_file'),
+        body || (Hash :body => (YAML.load <<-EOY).to_json, :status => 200)
+          accountId: d765e276730e
+          action: upload
+          bucketId: dd8786b5eef2c7d66743001e
+          contentLength: 6144
+          contentSha1: 5ba6cf1b3b3a088d73941052f60e78baf05d91fd
+          contentType: application/octet-stream
+          fileId: 4_zdd8786b5eef2c7d66743001e_f1096f3027e0b1927_d20180725_m115148_c002_v0001095_t0047
+          fileInfo:
+            src_last_modified_millis: 1532503455580
+          fileName: test_file
+          uploadTimestamp: 1532519508000
+        EOY
+    end
+
+    def stub_b2_get_upload_url( body = nil )
+      Excon.stub \
+        (Hash path: '/api/b2api/v1/b2_get_upload_url'),
+        body || (Hash :body => (YAML.load <<-EOY).to_json, :status => 200)
+          :uploadUrl: http://test.or/api/b2api/v1/b2_upload_file
+          :authorizationToken: f68719ab53e4dc20
+        EOY
+    end
+
+    let :tmp_file do
+      Tempfile.new
+    end
+
+    let :upload_file do
+      Backup::Backblaze::UploadFile.new \
+        src: tmp_file.path,
+        dst: 'dir/not_a_dest',
+        account: account,
+        bucket_id: '212f1bfa'
+    end
+
+    it 'success with no retries' do
+      stub_b2_upload_file
+      stub_b2_get_upload_url
+      upload_file.should_receive(:b2_upload_file).exactly(1).times.and_call_original
+      upload_file.should_receive(:b2_get_upload_url).exactly(1).times.and_call_original
+      upload_file.call
+    end
+
+    %i[bad_auth_401_body expired_auth_401_body].each do |bad_body|
+      it "b2_get_upload_url with retries with stub_b2_upload_file on #{bad_body}" do
+        stub_b2_upload_file send(bad_body)
+        stub_b2_get_upload_url
+
+        account.should_receive(:b2_authorize_account).never
+        upload_file.should_receive(:b2_upload_file).exactly(MAX_RETRIES).times.and_call_original
+        upload_file.should_receive(:b2_get_upload_url).exactly(MAX_RETRIES+1).times.and_call_original
+
+        ->{upload_file.call}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
       end
+    end
+
+    it 'no retry for unknown 401 body code' do
+      stub_b2_upload_file unknown_401_body
+      stub_b2_get_upload_url
+
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      upload_file.should_receive(:b2_get_upload_url).exactly(1).times.and_call_original
+      upload_file.should_receive(:b2_upload_file).exactly(1).times.and_call_original
+
+      ->{upload_file.call}.should raise_error(Excon::Errors::Unauthorized)
+    end
+
+    it 'retries get_url on 50x server error' do
+      stub_b2_upload_file server_503_body
+      stub_b2_get_upload_url
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      upload_file.should_receive(:b2_get_upload_url).exactly(MAX_RETRIES+1).times.and_call_original
+      upload_file.should_receive(:b2_upload_file).exactly(MAX_RETRIES).times.and_call_original
+      ->{upload_file.call}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
+    end
+
+    it 'retries auth on 50x server error' do
+      stub_b2_upload_file server_503_body
+      stub_b2_get_upload_url
+
+      account.should_receive(:b2_authorize_account).exactly(MAX_RETRIES-1).times
+      upload_file.should_receive(:b2_get_upload_url).exactly(MAX_RETRIES+1).times.and_call_original
+      upload_file.b2_get_upload_url
+
+      # now break both of them
+      stub_b2_get_upload_url bad_auth_401_body
+      upload_file.should_receive(:b2_upload_file).exactly(1).times.and_call_original
+      ->{upload_file.call}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
+    end
+
+    it 'retries for 408, without get_url retry' do
+      stub_b2_upload_file server_408_body
+      stub_b2_get_upload_url
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      upload_file.should_receive(:b2_get_upload_url).exactly(MAX_RETRIES+1).times.and_call_original
+      upload_file.should_receive(:b2_upload_file).exactly(MAX_RETRIES).times.and_call_original
+      ->{upload_file.call}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
+    end
+
+    it 'retries for 429, no get_url retry, with Retry-After' do
+      stub_b2_upload_file server_429_body
+      stub_b2_get_upload_url
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      upload_file.should_receive(:b2_get_upload_url).exactly(1).times.and_call_original
+
+      upload_file.should_receive(:b2_upload_file).exactly(MAX_RETRIES+1).times do |*args,**kwargs|
+        # backoff is an optional arg
+        if backoff = kwargs[:backoff]
+          backoff.should == server_429_body[:headers]['Retry-After']
+        end
+
+        # Ok now jump through flaming hoops of flaming fire to get the original
+        #:b2_upload_file method. Because we can't get at and_call_original from here.
+        upload_file.class.instance_method(:b2_upload_file).bind(upload_file).call(*args, **kwargs)
+      end
+
+      ->{upload_file.call}.should raise_error(Backup::Backblaze::Retry::TooManyRetries)
+    end
+
+    it 'no retry for 403' do
+      stub_b2_upload_file server_403_body
+      stub_b2_get_upload_url
+      account.should_receive(:b2_authorize_account).exactly(0).times
+      upload_file.should_receive(:b2_get_upload_url).exactly(1).times.and_call_original
+      upload_file.should_receive(:b2_upload_file).exactly(1).times.and_call_original
+      ->{upload_file.call}.should raise_error(Excon::Errors::Forbidden)
     end
   end
 end
