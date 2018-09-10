@@ -94,12 +94,14 @@ retry( Call, 429, _Code, [Call] ) :- upload_retry(Call,_).
 
 % non-upload 401 failures - re-auth account
 retry( Call, 401, Code, [b2_authorize_account,Call] ) :-
-  Call \= b2_authorize_account,
+  Call \= b2_authorize_account, % b2_authorize_account can't retry with b2_authorize_account
+  not(upload_retry(Call,_)),
   not_authorised_retryable_code(Code),
   not(upload_retry(Call,_)).
 
 % non-upload with 408, 429, and 5xx - retry call (after a backoff)
 retry( Call,HttpStatus,_Code,[Call] ) :-
+  not(upload_retry(Call,_)),
   (member(HttpStatus, [408,429]); five_hundreds(HttpStatus)),
   not(upload_retry(Call,_)).
 
@@ -112,21 +114,19 @@ allballs( Call,HttpStatus,Code,Retry ) :-
 %%%%%%%%%%%%%%%%%%%
 % Various conversions to ruby
 
-to_ruby(A) :- atom(A),   format(':~a', A).
-to_ruby(A) :- string(A), format('"~s"', A).
-to_ruby(N) :- integer(N), format('~d', N).
-to_ruby(F) :- float(F), format('~f', F).
+% use with with_output_to, can't figure out another way :-\
+to_ruby_commas([]).
+to_ruby_commas([Last]) :- !, to_ruby(Last).
+to_ruby_commas([Fst|Rst]) :- to_ruby(Fst), format(','), to_ruby_commas(Rst).
 
-% use with with_output_to
-to_ruby_symbol_commas([]).
-to_ruby_symbol_commas([Last]) :- format(':~a', Last).
-to_ruby_symbol_commas([Fst|Rst]) :- Rst \= [], format(':~a,', Fst), to_ruby_symbol_commas(Rst).
-
-to_ruby_range(HttpStatus,StatusMatch) :-
-  attvar(HttpStatus) ->
-    get_attr(HttpStatus, bounds, bounds(N,X,_)),
-    format(atom(StatusMatch), '~d..~d', [N,X]);
-  format(atom(StatusMatch), '~d', HttpStatus).
+% This has to be before ruby_lit(A). Dunno why.
+to_ruby(Range) :-       attvar(Range), get_attr(Range, bounds, bounds(N,X,_)), format('~d..~d', [N,X]).
+to_ruby(A) :-           atom(A),       format(':~a', A).
+to_ruby(S) :-           string(S),     format('"~s"', S).
+to_ruby(N) :-           integer(N),    format('~d', N).
+to_ruby(F) :-           float(F),      format( '~f', F).
+to_ruby(L) :-           is_list(L),    format('[~@]', to_ruby_commas(L)).
+to_ruby(ruby_lit(A)) :- format('~w', A).
 
 default_to_any(Code,DefCode) :- ground(Code) -> format(atom(DefCode), ':~a', Code); DefCode = 'Any'.
 
@@ -135,19 +135,23 @@ all_whens :-
   to_when( Call, HttpStatus, Code, Retries ).
 
 to_when( Call, HttpStatus, Code, Retries ) :-
-  to_ruby_range(HttpStatus,StatusMatch),
-  with_output_to(atom(RetrySymbols), to_ruby_symbol_commas(Retries)),
   default_to_any(Code,DefaultedAnyCode),
-  format('when [:~a, ~a, ~a] then [~a]~n', [Call,StatusMatch,DefaultedAnyCode,RetrySymbols] ).
+  format('when [~@, ~@, ~a] then ~@~n', [to_ruby(Call),to_ruby(HttpStatus),DefaultedAnyCode,to_ruby(Retries)] ).
 
-to_whens :- bagof(_,all_whens,_).
+to_whens :- findall(_,all_whens,_).
+to_whens(Term) :- findall(_,(apply(Term,C,Hs,Co,Re),retry(C,Hs,Co,Re)),_).
+
+some_whens :-
+  findall(
+    _,
+    (member(C,[b2_upload_part,b2_upload_file,b2_authorize_account,any_call]),retry(C,Hs,Co,Re),to_when(C,Hs,Co,Re))
+    ,_).
 
 map_all :-
   format('retries = Hash.new{|h,k| h[k] = Set.new}~n'),
   allballs( Call, _HttpStatus, _Code, Retries ),
   selectchk(Call,Retries,Uniqs),
   Uniqs \= [],
-  with_output_to(atom(RetrySymbols), to_ruby_symbol_commas(Uniqs)),
-  format('retries[:~a].merge([~a])~n', [Call,RetrySymbols] ).
+  format('retries[~@].merge(~@)~n', [to_ruby(Call),to_ruby(Uniqs)] ).
 
-to_map :- bagof(_,map_all,_), format('retries~n').
+to_map :- findall(_,map_all,_), format('retries~n').

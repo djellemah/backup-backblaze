@@ -3,9 +3,7 @@ require 'set'
 module Backup
   module Backblaze
     module RetryLookup
-      def (Any = Object.new).=== other
-        true
-      end
+      def (Any = Object.new).=== _other; true end
 
       module Matcher
         refine Array do
@@ -23,8 +21,9 @@ module Backup
       # Generated from retry.pl
       #
       # Cross-product of all the retry scenarios we know about. This probably
-      # isn't the fastest way to calculate retries, but retries are rare. So the
-      # slowdown doesn't matter.
+      # isn't the fastest way to calculate retries. But they're rare, so the
+      # slowdown doesn't matter. There is a more general pattern, but I don't
+      # want to get sucked into implementing unification.
       module_function def retry_sequence api_call, http_status, code
         case [api_call.to_sym,        http_status, code.to_sym]
         when [:b2_upload_part, 401, :expired_auth_token] then [:b2_get_upload_part_url,:b2_upload_part]
