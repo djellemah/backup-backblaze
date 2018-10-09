@@ -1,6 +1,7 @@
 # Backup::Backblaze
 
 Plugin for the [Backup](https://github.com/backup/backup) gem to use [Backblaze](https://www.backblaze.com/) as storage.
+Used in production every day.
 
 ## Installation
 
